@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ${CLUSTER_NAME}-controlplane
+  labels:
+    app.kubernetes.io/name: ${CLUSTER_NAME}-controlplane
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Delete
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${CLUSTER_NAME}-controlplane
+  serviceName: ${CLUSTER_NAME}-controlplane
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${CLUSTER_NAME}-controlplane
+    spec:
+      containers:
+        - name: talos
+          image: ghcr.io/siderolabs/talos:v1.10.3
+          env:
+            - name: PLATFORM
+              value: container
+            ### Variant with USERDATA from secret
+            # - name: USERDATA
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: ${CLUSTER_NAME}
+            #       key: controlplane.yaml.base64
+          ports:
+            - containerPort: 50000
+              name: talos-api
+              protocol: TCP
+            - containerPort: 6443
+              name: k8s-api
+              protocol: TCP
+          securityContext:
+            privileged: true
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: Unconfined
+          startupProbe:
+            tcpSocket:
+              port: 50000
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 2
+            successThreshold: 1
+          livenessProbe:
+            tcpSocket:
+              port: 50000
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+          volumeMounts:
+            ### persistent mounts
+            - mountPath: /system/state
+              name: storage
+              subPath: system-state
+            - mountPath: /var
+              name: storage
+              subPath: var
+            - mountPath: /etc/cni
+              name: storage
+              subPath: etc-cni
+            - mountPath: /etc/kubernetes
+              name: storage
+              subPath: etc-kubernetes
+            - mountPath: /usr/libexec/kubernetes
+              name: storage
+              subPath: usr-libexec-kubernetes
+            ### ephemeral mounts
+            - mountPath: /run
+              name: run
+            - mountPath: /system
+              name: system
+            - mountPath: /tmp
+              name: tmp
+      dnsPolicy: ClusterFirst
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: system
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${CLUSTER_NAME}-controlplane
+  labels:
+    app.kubernetes.io/name: ${CLUSTER_NAME}-controlplane
+spec:
+  type: LoadBalancer
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: ${CLUSTER_NAME}-controlplane
+  ports:
+    - name: talos-api
+      port: 50000
+      targetPort: 50000
+      protocol: TCP
+    - name: k8s-api
+      port: 6443
+      targetPort: 6443
+      protocol: TCP

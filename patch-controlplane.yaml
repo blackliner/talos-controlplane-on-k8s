@@ -1,0 +1,14 @@
+cluster:
+  network:
+    podSubnets:
+      - "172.16.0.1/16"
+    serviceSubnets:
+      - 172.17.0.1/16
+  apiServer:
+    admissionControl:
+      - name: PodSecurity
+        configuration:
+          defaults:
+            audit: privileged
+            enforce: privileged
+            warn: privileged
